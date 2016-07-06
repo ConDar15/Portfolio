@@ -1,7 +1,4 @@
-Jake Conkerton-Darby Portfolio
-==============
-
-This is a sample of my programming abilites accumulated over my University career.
+This portfolio shows my skills with programming for prospective employers
 
 Java
 ==============
