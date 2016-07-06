@@ -1,0 +1,47 @@
+K 25
+svn:wc:ra_dav:version-url
+V 55
+/svn/msc-workshop/Monaco/!svn/ver/55/databse%20commands
+END
+add_rows.sql
+K 25
+svn:wc:ra_dav:version-url
+V 68
+/svn/msc-workshop/Monaco/!svn/ver/48/databse%20commands/add_rows.sql
+END
+refresh_login.sql
+K 25
+svn:wc:ra_dav:version-url
+V 73
+/svn/msc-workshop/Monaco/!svn/ver/48/databse%20commands/refresh_login.sql
+END
+create_tables.sql
+K 25
+svn:wc:ra_dav:version-url
+V 73
+/svn/msc-workshop/Monaco/!svn/ver/48/databse%20commands/create_tables.sql
+END
+README.txt
+K 25
+svn:wc:ra_dav:version-url
+V 66
+/svn/msc-workshop/Monaco/!svn/ver/54/databse%20commands/README.txt
+END
+refresh.sql
+K 25
+svn:wc:ra_dav:version-url
+V 67
+/svn/msc-workshop/Monaco/!svn/ver/48/databse%20commands/refresh.sql
+END
+add_login.sql
+K 25
+svn:wc:ra_dav:version-url
+V 69
+/svn/msc-workshop/Monaco/!svn/ver/48/databse%20commands/add_login.sql
+END
+refresh_products.sql
+K 25
+svn:wc:ra_dav:version-url
+V 76
+/svn/msc-workshop/Monaco/!svn/ver/48/databse%20commands/refresh_products.sql
+END

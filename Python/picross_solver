@@ -1,0 +1,405 @@
+#!/usr/bin/python3
+
+#A 'clue' refers to a list of non-negative integers given either for a
+#    row or a column for a picross puzzle
+#A 'solution' is a configuration of filled blocks that will solve a
+#    given clue in a given space,
+#    e.g. (with 1 representing a filled block and 0 a blank space)
+#        clue 1,2 in a space of 6 has solutions:
+#            101100, 100110, 100011, 010110, 010011, 001011
+
+import sys
+
+from Classes import BitString
+
+#Characters to represent a filled or blank square in the solved puzzle
+FILLD_CHAR = '#'
+BLANK_CHAR = ' '
+
+#Description to show on the help page
+DESCRIPTION = """A solver for the picross puzzle game.
+This program requires the input of integers to represent the number of
+    rows and columns of the grid and then comma seperated lists to represent
+    the individual clues.
+Initiating a keyboard interrupt during the entering of a clue will silently
+    abort the execution of the program."""
+
+size = lambda clue : sum(clue) + len(clue) - 1
+size.__doc__ = """Gives the minimum size a clue can be"""
+
+def get_sols(clue, L):
+    """Returns all possible solutions for the given clue, taking up to a maximum length L, as a string of bits"""
+    #Base case, indicates that the blocks of the clue have been consumed and
+    #   the rest of the solution is empty
+    if len(clue) == 0:
+        return ['0'*L]
+   
+    R = []
+    #Positions the first clue block in all it's possible places from as far left
+    #   as possible to as far right as possible, then finds all the permutations
+    #   of the remaining blocks given the current positioning
+    #Solutions take the form of a str object representing bits where a 1 indicates
+    #    a filled block and 0 an empty block
+    for i in range(L - size(clue[1:]) - clue[0]):
+
+        if i + clue[0] == L:
+            #Doesn't append a '0' to the end if the clue block reaches the far right edge
+            pre = '0'*i + '1'*clue[0]
+        else:
+            pre = '0'*i + '1'*clue[0] + '0'
+            
+        #Recursively finds all solutions
+        R += [pre + sub for sub in get_sols(clue[1:], L - len(pre))]
+        
+    return R
+
+def get_dim(prompt):
+    """Gets the dimension of either the row or height from the user via stdi/o"""
+    while True:
+        try:
+            N = int(input('Please input the number of %s: ' % prompt))
+            assert N > 0
+            return N
+        except (AssertionError,ValueError):
+            print('The dimension given must be a non-negative integer, please try again')
+        except:
+            print('An error occured in input, please try again')
+
+def get_clues(prompt, N, L):
+    """Gets N clues from the user, each of maximum length L.
+Validation and error checks are applied to each individual clue"""
+    clues = []
+    for n in range(1, N+1):
+        while True:
+            try:
+                clue = list(map(int,input('Please input the clue for %s %d: ' % (prompt, n)).split(',')))
+                #Converts 'empty' clues, deonted by [0], to empty lists ([0] -> [])
+                if clue == [0]:
+                    clue = []
+
+                #Error checking is done here
+                assert all([d >=0 for d in clue]), 'negative' #Checks that only non-negative integers have been supplied
+                assert size(clue) <= L, 'size' #Checks that the clues do not exceed the bounds of their domain
+                
+                clues.append(clue)
+                break
+            
+            except AssertionError as AE:
+                typ = str(AE)
+                if typ == 'size':
+                    print('The input clue is too large, please try again')
+                elif typ == 'negative':
+                    print('One or more of the values was negative, please try again')
+            except KeyboardInterrupt:
+                #Used to quietly exit the program
+                return ['exit']
+            except ValueError:
+                print("The clues must be given as a comma seperated list of integers")
+            except:
+                print('An error occured in input, please try again')
+                
+    return clues
+
+transpose = lambda G : list(map(lambda c : BitString(''.join(c)),zip(*G)))
+transpose.__doc__ = """Transposes the given grid of BitString objects"""
+
+def generate_solutions(N, M, row_clues, col_clues):
+    """Generates all row and column solutions for the given set of clues and dimensions"""
+    #Utilises a dictionary to save having to run get_sols repeatedly for the same clue signature
+    clue_sols = {clue:get_sols(*clue) for clue in set([(tuple(clue),M) for clue in row_clues] + [(tuple(clue),N) for clue in col_clues])}
+    
+    row_sols = [list(map(lambda s : BitString(s), clue_sols[(tuple(clue),M)])) for clue in row_clues]
+    col_sols = [list(map(lambda s : BitString(s), clue_sols[(tuple(clue),N)])) for clue in col_clues]
+    
+    return (row_sols, col_sols)
+
+def cull(sols, filld, blank):
+    """Selects and returns the solutions in sols that are still valid under the given bitstring masks"""
+    new_sols = []
+    for sol in sols:
+        #A solution is valid if it has '1's where filld does and it's inverse has '1's where blank does
+        if (sol & filld == filld) and (~sol & blank == blank):
+            new_sols.append(sol)
+    #Returns the solutions that are still valid and if there has been any change to the solution set passed
+    return (new_sols, sols != new_sols)
+
+def display(filld_grid, blank_grid, N, M):
+    """Prints the given grid to stdout"""
+	print(' ' + '_'*M)
+    for i in range(N):
+        t = '|'
+        for j in range(M):
+            if filld_grid[i][j] == '1':
+                t += FILLD_CHAR
+            elif blank_grid[i][j] == '1':
+                t += BLANK_CHAR
+            else:
+                t += ' '
+        print(t)
+
+def solve(N, M, row_clues, col_clues, verbose=0):
+    """Solves the puzzle provided by dimensions and clues from the arguments"""
+    
+    #The initial state of the grid. Two parts used to indicate the grid of known
+    #   filled squares and known empty squares, all initially '0'
+    filld_grid = [BitString('0'*M) for row in range(N)]
+    blank_grid = [BitString('0'*M) for row in range(N)]
+
+    #Boolean list to indicate when a row/column is solved
+    row_done = [False]*N
+    col_done = [False]*M
+
+    #Generates the solutions for row and column solutions
+    row_sols, col_sols = generate_solutions(N,M,row_clues,col_clues)
+
+    count = 0
+    changed = True
+    #Continues until all the row_done and col_done values are True which indicates
+    #   that the problem has been solved successfully
+    while not (all(row_done) and all(col_done)):
+
+        #If the grid hasn't changed at all in the last loop then then no solution can be found
+        #   from the given arguments, the solution therefore stops and reports progress
+        if changed == False:
+            print('Could not solve the problem, below is progress made:')
+            return (filld_grid, blank_grid, count)
+        changed = False
+
+        #Goes through each row
+        for r in range(N):
+            #Only does anything if the row hasn't already been completed
+            if not row_done[r]:
+
+                #Removes solutions from row_sols that are no longer valid
+                row_sols[r], t = cull(row_sols[r], filld_grid[r], blank_grid[r])
+                #Uses whether any solutions have been culled to update the changed value
+                changed |= t
+
+                #If any row ends up with no valid solutions then an error has occured and
+                #   the method returns it's progress
+                if len(row_sols[r]) == 0:
+                    print('An error has occured and dropped all solutions for a row.')
+                    print('Below is progress made')
+                    return (filld_grid, blank_grid, count)
+
+                #If any row has only one valid solution then that row has to be done and
+                #   the relevant grid rows can be set
+                if len(row_sols[r]) == 1:
+                    row_done[r] = True
+                    filld_grid[r] = row_sols[r][0]
+                    blank_grid[r] = ~row_sols[r][0]
+
+                #The final case creates a 'mask' of bits that are guaranteed to be either
+                #   filled or blank for any valid solution in the given row
+                else:
+                    filld_mask = BitString('1'*M)
+                    blank_mask = BitString('1'*M)
+                    for sol in row_sols[r]:
+                        filld_mask &= sol
+                        blank_mask &= ~sol
+                    #Updates the grid rows with the masks found
+                    filld_grid[r] |= filld_mask
+                    blank_grid[r] |= blank_mask
+
+            #In incredibly verbose states the grid is shown after each individual row/column pass
+            if verbose > 2:
+                display(filld_grid, blank_grid, N, M)
+
+        #In very verbose states the grid is shown after each row/column pass
+        if verbose > 1 and verbose < 3:
+            display(filld_grid, blank_grid, N, M)
+            
+        #Transposes the grids to facilitate solving columns           
+        filld_grid = transpose(filld_grid)
+        blank_grid = transpose(blank_grid)
+
+        #Goes through each column
+        for c in range(M):
+            #Only does anything if the column hasn't already been completed
+            if not col_done[c]:
+
+                #Removes solutions from col_sols that are no longer valid
+                col_sols[c], t = cull(col_sols[c], filld_grid[c], blank_grid[c])
+                #Uses wheter any soultions have been culled to update the changed value
+                changed |= t
+
+                #If any column ends up with no valid solutions then an error has occured
+                #   and the method returns it's progress
+                if len(col_sols[c]) == 0:
+                    print('An error has occured and dropped all solutions for a row.')
+                    print('Below is progress made')
+                    return (filld_grid, blank_grid, count)
+
+                #If any column has only one valid solution the that row has to be done
+                #   and the relevant grid columns can be set
+                if len(col_sols[c]) == 1:
+                    col_done[c] = True
+                    filld_grid[c] = col_sols[c][0]
+                    blank_grid[c] = ~col_sols[c][0]
+
+                #The final case creates a 'mask' of bitst that are guaranteed to be either
+                #   filled or blank for any valid solution in the given column
+                else:
+                    filld_mask = BitString('1'*N)
+                    blank_mask = BitString('1'*N)
+                    for sol in col_sols[c]:
+                        filld_mask &= sol
+                        blank_mask &= ~sol
+                    #Updates the grid columns with the masks found
+                    filld_grid[c] |= filld_mask
+                    blank_grid[c] |= blank_mask
+
+            #In extremely verbose states the grid is shown after each individual row/column pass
+            if verbose > 2:
+                display(transpose(filld_grid), transpose(blank_grid), N, M)
+
+        #Transposes the grids to facilitate solving rows again
+        filld_grid = transpose(filld_grid)
+        blank_grid = transpose(blank_grid)
+
+        count += 1
+
+        #Prints out the prgress after the current pass if the user has requested this
+        if verbose > 0 and verbose < 3:
+            display(filld_grid, blank_grid, N, M)
+
+    return (filld_grid, blank_grid, count)
+
+def validate(clues, L):
+    """Returns validated and normalised ([0] -> []) clues from the given clues.
+Error checking is performed and raises assertion errors to warn of incorrect values"""
+    validated_clues = []
+    for clue in clues:
+        #[0] -> []
+        if clue == [0]:
+            validated_clues.append([])
+            continue
+
+        #Error checking here
+        assert all([d >= 0 for d in clue]), 'negative' #Ensures that all clues are non-negative
+        assert size(clue) <= L, 'size' #Ensures that all clues can lie within the dimensions of the puzzle
+        
+        validated_clues.append(clue)
+        
+    return validated_clues
+        
+#Runs if the program is run directly
+if __name__ == '__main__':
+
+    #Uses argparse to read in command line argumnts
+    import argparse
+    parser = argparse.ArgumentParser(prog='Picross Solver v 1.0',
+                                     description=DESCRIPTION)
+    #The input argument creates a list (of lists) of all the files to read from
+    parser.add_argument('-i', '--input', action='append', nargs='+',
+                        help='The file(s) to read the input from')
+    #The output argument indicates where to send output and defaults to stdout
+    parser.add_argument('-o', '--output', action='store',
+                        type=argparse.FileType('w'), default=sys.stdout,
+                        help='Dictates the output file for the program, defaults to stdout')
+    #The verbosity of the output ranging from 0 (print after solving) to 3 (print after each individual row/column update)
+    parser.add_argument('-v', '--verbose', action='count', default=0)
+
+    #Parses any command line arguments
+    args = parser.parse_args()
+
+    #Redirects the stdout for printing
+    out_store = sys.stdout
+    sys.stdout = args.output
+    
+    #If args.input is None then parameters must be taken from the stdin
+    if args.input == None:
+
+        N = get_dim('Rows')
+        M = get_dim('Columns')
+
+        #Gets the row clues from the user
+        row_clues = get_clues('Row',N,M)
+        #Exits the program on receiving ['exit'] from get_clues, by skipping over the rest of execution
+        if row_clues != ['exit']:
+            #Gets the column clues from the user
+            col_clues = get_clues('Column',M,N)
+            #Similar exit condition
+            if col_clues != ['exit']:
+
+                print()
+
+                #Solves the puzzle
+                filld_grid, blank_grid, count = solve(N,M,row_clues, col_clues, args.verbose)
+
+                #Prints the solution to the puzzle
+                print('%d passes needed to compute below image:' % count)
+                display(filld_grid, blank_grid, N, M)
+
+    #Execution branch on being provided with input files
+    else:
+
+        #Turns the list of list of filenames into a list of filenames
+        files = set(sum(args.input, []))
+        
+        for file in files:
+            try:
+                in_file = open(file)
+                #Takes in all the data at once and splits the lines before closing the file
+                data = in_file.read().splitlines()
+                in_file.close()
+
+                #Required file format:
+                #   First line indicates number of records
+                #   Records in the order (one line each):
+                #       The number of rows (N)
+                #       The number of columns (M)
+                #       The row clues as comma seperated lists, themselves seperated by a '/' character
+                #       The column clues as comma seperated lists, themselves seperated by a '/' character
+                
+                num = int(data[0])
+                for i in range(num):
+
+                    try:
+                        entry = 4*i
+
+                        N = int(data[entry + 1])
+                        M = int(data[entry + 2])
+
+                        #Reads in and error checks the row clues
+                        row_clues = validate([list(map(int,clue.split(','))) for clue in data[entry + 3].split('/')],M)
+                        assert len(row_clues) == N, 'row len'
+
+                        #Reads in and error checks the column clues
+                        col_clues = validate([list(map(int,clue.split(','))) for clue in data[entry + 4].split('/')],N)
+                        assert len(col_clues) == M, 'col len'
+
+                        print('%s entry %d' % (file, i + 1), file=args.output)
+
+                        #Solves the current puzzle
+                        filld_grid, blank_grid, count = solve(N,M,row_clues,col_clues,args.verbose)
+
+                        #Displays the results of the solution
+                        print('%d passes needed to compute below image:' % count)
+                        display(filld_grid, blank_grid, N, M)
+                        print()
+                        
+                    except IndexError:
+                        print('File %s ends early and only %d entries were attempted' % file, entry)
+                        break
+                    except AssertionError as AE:
+                        typ = str(AE)
+                        print('Error in entry %d of %s and must be aborted:' % (i+1,file))
+                        if typ == 'size':
+                            print('The input clue is too large, please try again')
+                        elif typ == 'negative':
+                            print('One or more of the values was negative, please try again')
+                        elif typ == 'row len':
+                            print('The number of Row clues does not match the number or rows expected')
+                        elif typ == 'col len':
+                            print('The number of Column clues does not match the number of columns expected')
+                        else:
+                            print(AE)
+                    except Exception as e:
+                        print('An error occured and entry %d of file %s was aborted' % (entry + 1, file))
+
+            except FileNotFoundError:
+                print('Could not find file %s, moving to next file' % file)
+                print()
+
+    sys.stdout = out_store

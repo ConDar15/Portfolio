@@ -1,0 +1,3 @@
+A collection of files from my Master's Project.
+
+These files are used to implement various different methods for calculating square roots; many of these methods are implemented using the MPFR library for high precision calculations. The full project including code, and LaTeX files can be found at the following address https://github.com/Ybrad/Year-4-Project

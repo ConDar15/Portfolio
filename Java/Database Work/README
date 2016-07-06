@@ -1,0 +1,3 @@
+This represents an interface to a PostgreSQL database I created. 
+
+I created this as part of a group project during my Year in Computer Science, where my role was to manage the database backend for a client/server application. The PSQL code used in the project, that I also created, is in the sub-folder.
