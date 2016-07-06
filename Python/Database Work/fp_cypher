@@ -1,0 +1,2 @@
+#!/bin/bash
+./cypher_gen "$1" --file-printing > generated-cyphers.txt

@@ -1,0 +1,84 @@
+#! /usr/bin/python3.3
+
+import postgresql
+import sys
+import random
+from helper_functions import roll
+
+try:
+	#Sets up database connection and prepared statements
+	con = postgresql.open(database = "numenera", user = "jake", password = "t1o2b3y4")
+	get_roll      = con.prepare("SELECT roll FROM tables WHERE id = $1")
+	get_artifacts = con.prepare("SELECT * FROM numenera_item, artifact WHERE numenera_item.name ILIKE $1 AND "
+			+ "numenera_item.n_id = artifact.art_id ORDER BY name ASC")
+	get_effects   = con.prepare("SELECT * FROM effects_table WHERE table_id = $1 ORDER BY low_roll ASC")
+	
+	#Ensures that a search term has been given
+	if len(sys.argv) < 2:
+		print("No argument given")
+		exit()
+	
+	#Pulls all artifacts out of the list matching the given search anywhere in the artifact's name (case insensitive)
+	artifacts = get_artifacts("%" + sys.argv[1] + "%")
+
+	#Prints an error message if no artifacts could be found matching the search term
+	if len(artifacts) == 0:
+		print("No Cypher's found")
+		exit()
+	
+	#Displays and labels each artifact with a numeric value starting at 0
+	c = 0
+	for artifact in artifacts:
+		print("{}: {}".format(c, artifact[1]))
+		c += 1
+
+	print()
+
+	#Read in the users choice of artifact by index, accepting mistakes in typing
+	while True:
+		try:
+			i = int(input("Please input the artifact index: "))
+			break
+		except ValueError:
+			pass
+	
+	#Datapoints represented by artifact:
+	#	[n_id, name, min_level, max_level, description, table_id, n_id/art_id, form, dep_roll, dep_threshold, notes]
+	artifact = artifacts[i]
+	print()
+
+	#Gets the artifact's form
+	form = artifact[7]
+
+	#Gets a random table entry if the item has an associated table 
+	if artifact[5] != None:
+		x = roll(get_roll(artifact[5])[0][0])
+		t = get_effects(artifact[5])
+		for e in t:
+			if x in range(e[1], e[2]+1):
+				ef = e[3]
+				break
+	else:
+		ef = "N/A"
+		
+	if artifact[8] == None:
+		dep = 'N/A'
+	elif artifact[8] == artifact[9]:
+		dep = 'Automatic'
+	else:
+		if artifact[9] == 1:
+			dep = '1 in 1d{}'.format(artifact[8])
+		else:
+			dep = '1-{} in 1d{}'.format(artifact[9], artifact[8])
+
+	#Prints the data in a nice format
+	#\033[1m and \033[0m are start and end bold text respectively
+	print("{0}Name:{1} {2}\n{0}Level:{1} {3}\n{0}Effect:{1}\n\t{4}\n{0}Form:{1}\n\t{5}\n{0}Depletion:{1}\n\t{6}\n{0}Table Effect:{1}\n\t{7}"
+			.format("\033[1m", "\033[0m", artifact[1], random.randint(artifact[2],artifact[3]), artifact[4], form, dep, ef))
+
+except Exception as e:
+	print(e)
+
+finally:
+	if con:
+		con.close()	

@@ -1,3 +1,0 @@
-Some Python scripts that I wrote.
-
-ceaser_cipher and picross_solver are fully functional command-line utilities, while Classes shows some Object Oriented programming in Python. The Mathematical Utilities are a collection of implemented mathematical functions, that were used in solving a large selection of Project Euler problems; problems can be found at https://projecteuler.net, and I solved the first 81 problems sequentially.

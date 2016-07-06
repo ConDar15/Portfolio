@@ -1,0 +1,75 @@
+#! /usr/bin/python3.3
+
+import postgresql
+import sys
+
+RR = {(1, 6) : '1d6', (2, 7) : '1d6+1', (3,8) : '1d6+2', (4,9) : '1d6+3', (5,10) : '1d6+4', (1,10) : '1d10'}
+
+def max_length(roll_string):
+	roll_string = "".join(roll_string.split())
+	rolls = roll_string.split("+")
+	total = 0
+	for roll in rolls:
+		n, x = map(int, roll.split("d"))
+		total += n*x
+	return len(str(total)) 
+
+try:
+	con = postgresql.open(database = "numenera", user = "jake", password = "t1o2b3y4")
+	get_table   = con.prepare("SELECT roll, name FROM tables WHERE id = $1")
+	get_effects = con.prepare("SELECT * FROM effects_table WHERE table_id = $1 ORDER BY low_roll ASC")
+
+	if len(sys.argv) < 2:
+		print("No argument given")
+		exit()
+
+	artifacts = con.prepare("SELECT * FROM numenera_item, artifact WHERE numenera_item.name ILIKE $1"
+			+ " AND numenera_item.n_id = artifact.art_id ORDER BY name ASC")("%" + sys.argv[1] + "%")
+	
+	c = 0
+	for artifact in artifacts:
+		print("{}: {}".format(c, artifact[1]))
+		c += 1
+	
+	print()
+	i = int(input("Please input the cypher index: "))
+
+	artifact = artifacts[i]
+	print()
+
+	lvl = RR.get((artifact[2], artifact[3]), artifact[2])
+
+	if artifact[5] == None:
+		tbl = None
+	else:
+		tbl = get_effects(artifact[5])
+
+	if artifact[8] == None:
+		dep = "N/A"
+	elif artifact[8] == artifact[9]:
+		dep = "Automatic"
+	elif artifact[9] == 1:
+		dep = "1 in 1d{}".format(artifact[8])
+	else:
+		dep = "1-{} in 1d{}".format(artifact[9], artifact[8])
+
+	notes = artifact[10] == None and "N/A" or artifact[10]
+
+	print("{0}Name:{1} {2}\n{0}Level:{1} {3}\n{0}Effect:{1}\n\t{4}\n{0}Form:{1}\n\t{5}\n{0}Depletion:{1} {6}\n{0}Notes:{1}\n\t{7}"
+		.format("\033[1m", "\033[0m", artifact[1], lvl, artifact[4], artifact[7], dep, notes))
+	
+	if tbl != None:
+		roll, name = get_table(artifact[5])[0]
+		L = str(max_length(roll))
+		tbl = get_effects(artifact[5])
+		print("\033[1mTable of Effects:\033[0m " + name + " (Roll " + roll + ")")
+		for e in tbl:
+			print(("\t\033[4m{:0"+L+"}-{:0"+L+"}:\033[0m\n\t\t{}").format(e[1], e[2], e[3]))
+
+except BaseException as e:
+	print(e)
+	exit()	
+
+finally:
+	if con:
+		con.close()

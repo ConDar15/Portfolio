@@ -1,0 +1,53 @@
+#!/usr/bin/python3
+
+import postgresql
+import json
+import sys
+
+ARTIFACT_INPUT = sys.argv[1]
+ROLL_REF = {'1d6' : (1, 6), '1d6+1' : (2, 7), '1d6+2' : (3, 8), '1d6+3' : (4, 9), '1d6+4' : (5, 10), '1d10' : (1, 10)}
+
+con = postgresql.open(database = 'numenera', user = 'jake', password = 't1o2b3y4')
+get_n_id = con.prepare('SELECT n_id FROM numenera_item WHERE name = $1')
+get_t_id = con.prepare('SELECT id FROM tables WHERE name = $1')
+create_item = con.prepare('INSERT INTO numenera_item (name, min_level, max_level, effect, table_id) VALUES'
+							+ '($1, $2, $3, $4, $5)')
+create_artifact = con.prepare('INSERT INTO artifact (art_id, form, dep_roll, dep_threshold, notes) VALUES ($1, $2, $3, $4, $5)')
+create_table    = con.prepare('INSERT INTO tables (name, roll) VALUES ($1, $2)')
+create_effects_table    = con.prepare('INSERT INTO effects_table VALUES ($1, $2, $3, $4)')
+tables  = set(con.prepare('SELECT name, roll FROM tables')())
+
+with open(ARTIFACT_INPUT) as f:
+	artifacts = json.load(f)['artifacts']
+
+for a in artifacts:
+	if a['level'] in ROLL_REF:
+		min_r, max_r = ROLL_REF[a['level']]
+	else:
+		min_r = max_r = int(a['level'])
+	if 'table' in a:
+		t_name = a['table']['name'] 
+	else:
+		t_name = None
+	if t_name != None:
+		if (t_name, a['table']['roll']) not in tables:
+			tables.add((t_name, a['table']['roll']))
+			create_table(t_name, a['table']['roll'])
+			t_id = get_t_id(t_name)[0][0]
+			create_effects_table.load_rows(map(lambda r : (t_id, r['low_roll'], r['high_roll'], r['effect']), a['table']['rows']))
+		else:	
+			t_id = get_t_id(t_name)[0][0]
+	else:
+		t_id = None
+	if a['depletion'] == 'N/A':
+		dr = dt = None
+	elif a['depletion'] == 'Automatic':
+		dr = dt = 1
+	else:
+		dt, dr = a['depletion'].split(' in ')
+		dt = int(dt[dt.find('-')+1:])
+		dr = int(dr[dr.find('d')+1:])
+	notes = ('notes' in a and [a['notes']] or [None])[0]
+	create_item(a['name'], min_r, max_r, a['effect'], t_id)
+	a_id = get_n_id(a['name'])[0][0]
+	create_artifact(a_id, a['form'], dr, dt, notes)

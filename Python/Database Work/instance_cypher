@@ -1,0 +1,102 @@
+#! /usr/bin/python3.3
+
+import sys
+import postgresql
+import sys
+import random
+from helper_functions import roll
+
+try:
+	#Sets up database connection and prepared statements
+	con = postgresql.open(database = "numenera", user = "jake", password = "t1o2b3y4")
+	get_roll    = con.prepare("SELECT roll FROM tables WHERE id = $1")
+	get_cyphers = con.prepare("SELECT * FROM numenera_item, cypher WHERE numenera_item.name ILIKE $1 AND "
+			+ "numenera_item.n_id = cypher.cyp_id ORDER BY name ASC")
+	get_forms   = con.prepare("SELECT forms.form, forms.type FROM cypher_forms, forms WHERE "
+			+ "cypher_forms.cyp_id = $1 AND forms.form_id = cypher_forms.form_id")	
+	get_effects = con.prepare("SELECT * FROM effects_table WHERE table_id = $1 ORDER BY low_roll ASC")
+	
+	#Ensures that a search term has been given
+	if len(sys.argv) < 2:
+		print("No argument given")
+		exit()
+	
+	fp = False
+	bb = '\033[1m'
+	be = '\033[0m'
+	if len(sys.argv) > 2:
+		if sys.argv[2] == '--file-printing':
+			fp = True
+			bb = be = ''
+
+	#Pulls all cyphers out of the list matching the given search anywhere in the cypher's name (case insensitive)
+	cyphers = get_cyphers("%" + sys.argv[1] + "%")
+
+	#Prints an error message if no cyphers could be found matching the search term
+	if len(cyphers) == 0:
+		if not fp:
+			print("No Cypher's found")
+		exit()
+	
+	#Displays and labels each cypher with a numeric value starting at 0
+	c = 0
+	for cypher in cyphers:
+		if not fp:
+			print("{}: {}".format(c, cypher[1]))
+		c += 1
+	
+	if not fp:
+		print()
+
+	if fp:
+		if c == 1:
+			cypher = cyphers[0]
+		else:
+			exit()
+	else:
+	
+	#Read in the users choice of cypher by index, accepting mistakes in typing
+		while True:
+			try:
+				i = int(input("Please input the cypher index: "))
+				break
+			except ValueError:
+				pass
+	
+	#Datapoints represented by cypher:
+	#	[n_id, name, min_level, max_level, description, table_name, n_id/cyp_id, type]
+		cypher = cyphers[i]
+		print()
+	
+	#Gets a list of all the possible forms of the cypher
+	forms = get_forms(cypher[0])
+	
+	#Gets a random choice of form those found or an empty selection if none are found
+	form = len(forms) == 0 and ["N/A",""] or random.choice(forms)
+	form = form[0] + ' ' + '[{}]'.format(form[1])
+
+	#Gets a random table entry if the item has an associated table 
+	if cypher[5] != None:
+		x = roll(get_roll(cypher[5])[0][0])
+		t = get_effects(cypher[5])
+		for e in t:
+			if x in range(e[1], e[2]+1):
+				ef = e[3]
+				break
+	else:
+		ef = "N/A"
+		
+	#Prints the data in a nice format
+	#\033[1m and \033[0m are start and end bold text respectively
+	print("{0}Name:{1} {2}\n{0}Level:{1} {3}\n{0}Effect:{1}\n\t{4}\n{0}Type:{1} {5}\n{0}Form:{1}\n\t{6}"
+		.format(bb, be, cypher[1], random.randint(cypher[2],cypher[3]), cypher[4], cypher[7], form))
+	if cypher[5] != None:
+		print('{0}Table Effect:{1}\n\t{2}'.format(bb, be, ef))
+	
+	print()
+except Exception as e:
+	print(e)
+
+finally:
+	if con:
+		con.close()	

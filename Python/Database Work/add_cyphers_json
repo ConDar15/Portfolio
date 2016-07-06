@@ -1,0 +1,56 @@
+#!/usr/bin/python3
+
+import postgresql
+import json
+import sys
+
+CYPHER_INPUT = sys.argv[1]
+ROLL_REF = {'1d6' : (1, 6), '1d6+1' : (2, 7), '1d6+2' : (3, 8), '1d6+3' : (4, 9), '1d6+4' : (5, 10), '1d10' : (1, 10)}
+
+con = postgresql.open(database = 'numenera', user = 'jake', password = 't1o2b3y4')
+get_n_id = con.prepare('SELECT n_id FROM numenera_item WHERE name = $1')
+get_t_id = con.prepare('SELECT id FROM tables WHERE name = $1')
+get_f_id = con.prepare('SELECT form_id FROM forms WHERE form = $1')
+create_item = con.prepare('INSERT INTO numenera_item (name, min_level, max_level, effect, table_id) VALUES'
+							+ '($1, $2, $3, $4, $5)')
+create_cypher = con.prepare('INSERT INTO cypher (cyp_id, type) VALUES ($1, $2)')
+create_table  = con.prepare('INSERT INTO tables (name, roll) VALUES ($1, $2)')
+create_effects_table    = con.prepare('INSERT INTO effects_table VALUES ($1, $2, $3, $4)')
+add_form  = con.prepare('INSERT INTO forms (form, type) VALUES ($1, $2)')
+add_cypher_form = con.prepare('INSERT INTO cypher_forms VALUES ($1, $2)')
+forms   = set(con.prepare('SELECT form, type FROM forms')())
+tables  = set(con.prepare('SELECT name, roll FROM tables')())
+
+with open(CYPHER_INPUT) as f:
+	cyphers = json.load(f)['cyphers']
+
+for c in cyphers:
+	if c['level'] in ROLL_REF:
+		min_r, max_r = ROLL_REF[c['level']]
+	else:
+		min_r = max_r = int(c['level'])
+	if 'table' in c:
+		t_name = c['table']['name'] 
+	else:
+		t_name = None
+	if t_name != None:
+		if (t_name, c['table']['roll']) not in tables:
+			tables.add((t_name, c['table']['roll']))
+			create_table(t_name, c['table']['roll'])
+			t_id = get_t_id(t_name)[0][0]
+			create_effects_table.load_rows(map(lambda r : (t_id, r['low_roll'], r['high_roll'], r['effect']), c['table']['rows']))
+		else:	
+			t_id = get_t_id(t_name)[0][0]
+	else:
+		t_id = None
+	create_item(c['name'], min_r, max_r, c['effect'], t_id)
+	c_id = get_n_id(c['name'])[0][0]
+	create_cypher(c_id, c['type'])
+	
+	for ft in c['forms']:
+		for f in c['forms'][ft]:
+			if (f,ft.capitalize()) not in forms:
+				forms.add((f,ft.capitalize()))
+				add_form(f, ft.capitalize())
+			f_id = get_f_id(f)[0][0]
+			add_cypher_form(c_id, f_id)
